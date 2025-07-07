@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>批量重命名 - 媒体文件管理器</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">媒体文件管理器</div>
+        <div class="navbar-menu">
+            <a href="/" class="btn btn-back">返回文件管理</a>
+            <a href="/logout" class="btn btn-logout">退出登录</a>
+        </div>
+    </nav>
+    <div class="container rename-container">
+        <div class="card">
+            <div class="card-header">
+                <h2>批量重命名文件</h2>
+                <p class="path-display">当前路径: {{ current_path }}</p>
+            </div>
+            <div class="card-body">
+                <form id="renameForm" method="POST">
+                    <input type="hidden" name="directory" value="{{ current_path }}">
+                    <div class="form-group">
+                        <label for="prefix" class="form-label">文件名前缀</label>
+                        <input type="text" id="prefix" name="prefix" class="form-control" required placeholder="例如：权力的游戏">
+                        <small class="form-text">将作为文件名的开头部分</small>
+                    </div>
+                    <!-- 添加命名模式选择器 -->
+                    <div class="form-group">
+                        <label for="naming_pattern" class="form-label">命名模式</label>
+                        <select id="naming_pattern" name="naming_pattern" class="form-control" required>
+                            <option value="season_episode_cn" selected>季集+中文模式 (S01E01 - 第1集)</option>
+                            <option value="season_episode">季集模式 (S01E01)</option>
+                            <option value="episode_only">仅集数模式 (第01集)</option>
+                            <option value="number_sequence">数字序号模式 (001)</option>
+                            <option value="custom">自定义模式</option>
+                        </select>
+                    </div>
+                    
+                    <!-- 自定义模式输入框 -->
+                    <div id="custom_pattern_group" class="form-group" style="display: none;">
+                        <label for="custom_pattern" class="form-label">自定义模式</label>
+                        <input type="text" id="custom_pattern" name="custom_pattern" class="form-control" placeholder="使用{prefix}, {season}, {episode}, {number}作为变量">
+                        <small class="form-text">例如: {prefix}_S{season}E{episode}</small>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="season" class="form-label">季数</label>
+                            <input type="number" id="season" name="season" class="form-control" min="1" value="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="start_episode" class="form-label">起始序号</label>
+                            <input type="number" id="start_episode" name="start_episode" class="form-control" min="1" value="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="digits" class="form-label">序号位数</label>
+                            <input type="number" id="digits" name="digits" class="form-control" min="1" max="5" value="2" required>
+                        </div>
+                    </div>
+                    
+                    <!-- 添加预览区域 -->
+                    <div class="form-group preview-container">
+                        <label class="form-label">重命名预览</label>
+                        <div id="preview_list" class="preview-list">
+                            <!-- 预览内容将通过JS动态生成 -->
+                            <div class="preview-item">原始文件名 → 新文件名</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions d-flex gap-2">
+                        <a href="/" class="btn btn-danger flex-fill text-decoration-none">取消</a>
+                        <button type="submit" class="btn btn-primary flex-fill">执行重命名</button>
+                    </div>
+                </form>
+                <div id="result" class="result-message"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // 显示/隐藏自定义模式输入框
+        document.getElementById('naming_pattern').addEventListener('change', function() {
+            const customGroup = document.getElementById('custom_pattern_group');
+            customGroup.style.display = this.value === 'custom' ? 'block' : 'none';
+            updatePreview();
+        });
+
+        // 更新预览
+        function updatePreview() {
+            const prefix = document.getElementById('prefix').value;
+            const season = document.getElementById('season').value;
+            const startEpisode = document.getElementById('start_episode').value;
+            const digits = document.getElementById('digits').value;
+            const pattern = document.getElementById('naming_pattern').value;
+            const customPattern = document.getElementById('custom_pattern').value;
+            const previewList = document.getElementById('preview_list');
+
+            // 清空预览
+            previewList.innerHTML = '';
+
+            // 生成示例预览
+            for (let i = 0; i < 3; i++) {
+                const episode = parseInt(startEpisode) + i;
+                let newName = generateFileName(prefix, season, episode, digits, pattern, customPattern);
+                const previewItem = document.createElement('div');
+                previewItem.className = 'preview-item';
+                previewItem.textContent = `示例文件${i+1}.mp4 → ${newName}.mp4`;
+                previewList.appendChild(previewItem);
+            }
+        }
+
+        // 生成文件名
+        function generateFileName(prefix, season, episode, digits, pattern, customPattern) {
+            const episodeStr = episode.toString().padStart(digits, '0');
+            const seasonStr = season.toString().padStart(2, '0');
+            const numberStr = episode.toString().padStart(digits, '0');
+
+            switch(pattern) {
+                case 'season_episode_cn':
+                    return `${prefix} - S${seasonStr}E${episodeStr} - 第${episode}集`;
+                case 'season_episode':
+                    return `${prefix} - S${seasonStr}E${episodeStr}`;
+                case 'episode_only':
+                    return `${prefix} - 第${episode}集`;
+                case 'number_sequence':
+                    return `${prefix} - ${numberStr}`;
+                case 'custom':
+                    return customPattern
+                        .replace(/{prefix}/g, prefix)
+                        .replace(/{season}/g, season)
+                        .replace(/{episode}/g, episode)
+                        .replace(/{season2}/g, seasonStr)
+                        .replace(/{episode2}/g, episodeStr)
+                        .replace(/{number}/g, numberStr);
+                default:
+                    return `${prefix} - S${seasonStr}E${episodeStr}`;
+            }
+        }
+
+        // 添加输入字段变化监听
+        document.getElementById('prefix').addEventListener('input', updatePreview);
+        document.getElementById('season').addEventListener('input', updatePreview);
+        document.getElementById('start_episode').addEventListener('input', updatePreview);
+        document.getElementById('digits').addEventListener('input', updatePreview);
+        document.getElementById('custom_pattern').addEventListener('input', updatePreview);
+
+        // 初始化预览
+        updatePreview();
+
+        document.getElementById('renameForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            try {
+                const response = await fetch('/rename', { method: 'POST', body: formData });
+                const result = await response.json();
+                const resultEl = document.getElementById('result');
+                resultEl.textContent = result.message;
+                resultEl.className = 'result-message ' + (result.success ? 'success' : 'error');
+                // 添加动画效果
+                resultEl.style.opacity = '0';
+                setTimeout(() => { resultEl.style.opacity = '1'; }, 10);
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        });
+    </script>
+</body>
+</html>

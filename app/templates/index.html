@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>媒体文件管理器</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">媒体文件管理器</div>
+        <div class="navbar-menu">
+            <a href="/settings" class="btn btn-settings">系统设置</a>  <!-- 新增设置按钮 -->
+            <a href="/logout" class="btn btn-logout">退出登录</a>
+        </div>
+    </nav>
+    <div class="container">
+        <!-- 左侧文件夹导航 -->
+        <div class="folder-nav">
+            <h3>媒体分类</h3>
+            <div class="folder-item active" data-path="">所有文件</div>
+            {% for category in config.categories %}
+            <div class="folder-item" data-path="{{ category.path }}">{{ category.name }}</div>
+            {% endfor %}
+        </div>
+
+        <!-- 右侧文件内容区域 -->
+        <div class="file-content">
+            <div class="path-nav">
+                <div class="path-text">当前路径: {{ current_path or '/' }}</div>
+                <div class="path-actions">
+                    {% if current_path %}
+                        <a href="{{ url_for('index', path=current_path.rsplit('/', 1)[0] if '/' in current_path else '') }}" class="btn btn-back">返回上级</a>
+                    {% endif %}
+                    {% if contents and contents|rejectattr("is_dir")|list|length > 0 %}
+                        <a href="{{ url_for('rename_files', path=current_path) }}" class="btn btn-rename">批量重命名</a>
+                        <a href="{{ url_for('transfer_files_route', path=current_path) }}" class="btn btn-transfer">批量转移</a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="file-list">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort-key="name">
+                                名称 <span class="sort-indicator"></span>
+                            </th>
+                            <th class="sortable" data-sort-key="type">
+                                类型 <span class="sort-indicator"></span>
+                            </th>
+                            <th class="sortable" data-sort-key="size">
+                                大小 <span class="sort-indicator"></span>
+                            </th>
+                            <th class="sortable" data-sort-key="modified">
+                                修改日期 <span class="sort-indicator"></span>
+                            </th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in contents %}
+                        <tr>
+                            <td>
+                                {% if item.is_dir %}
+                                    <a href="{{ url_for('index', path=item.path) }}" class="dir-link">{{ item.name }}</a>
+                                {% else %}
+                                    {{ item.name }}
+                                {% endif %}
+                            </td>
+                            <td class="file-type" data-name="{{ item.name }}">{{ '文件夹' if item.is_dir else '文件' }}</td>
+                            <td data-size="{{ item.size }}">{{ item.size | filesizeformat }}</td>
+                            <td data-modified="{{ item.modified_timestamp }}">{{ item.modified_time }}</td>
+                            <td class="action-buttons">
+                                <button class="btn btn-rename-single" data-path="{{ item.path }}" data-name="{{ item.name }}" data-isdir="{{ 'true' if item.is_dir else 'false' }}">重命名</button>
+                                {% if not item.is_dir %}
+                                <a href="{{ url_for('transfer_files_route', path=os.path.dirname(item.path), filename=item.name) }}" class="btn btn-transfer">转移</a>
+                                {% endif %}
+                                <button class="btn-hardlink" data-path="{{ item.path }}" data-name="{{ item.name }}" {% if item.is_dir %}disabled{% endif %}>硬链接</button>
+                                <button class="btn-delete" data-path="{{ item.path }}" data-name="{{ item.name }}" data-isdir="{{ 'true' if item.is_dir else 'false' }}">删除</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 新增分类导航点击事件脚本 -->
+    <script>
+        document.querySelectorAll('.folder-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const path = this.getAttribute('data-path');
+                window.location.href = "{{ url_for('index') }}" + (path ? "?path=" + encodeURIComponent(path) : "");
+            });
+        });
+    </script>
+
+    <!-- 添加模态对话框 -->
+    <div id="renameModal" class="modal">
+        <div class="modal-content rename-modal">
+            <div class="modal-header">
+                <h3>重命名文件</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="renameForm">
+                    <input type="hidden" id="renamePath" name="path">
+                    <input type="hidden" id="renameIsDir" name="is_dir">
+                    <div class="form-group">
+                        <label for="newName" class="form-label">新名称:</label>
+                        <input type="text" id="newName" name="new_name" required class="form-control large-input">
+                        <div class="form-hint">支持字母、数字、空格和特殊字符 . _ - ( )</div>
+                    </div>
+                </form>
+                <div id="renameResult" class="result-message"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-modal">取消</button>
+                <button type="submit" form="renameForm" class="btn btn-primary">确认重命名</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="hardlinkModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>硬链接查询</h3>
+            <div id="hardlinkContent">
+                <p>查询中...</p>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary close-modal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>确认删除</h3>
+            <p id="deleteMessage">确定要删除 <strong></strong> 吗？</p>
+            <input type="hidden" id="deletePath">
+            <input type="hidden" id="deleteIsDir">
+            <div class="form-actions">
+                <button id="confirmDelete" class="btn btn-danger">确定</button>
+                <button type="button" class="btn btn-secondary close-modal">取消</button>
+            </div>
+            <div id="deleteResult" class="result-message"></div>
+        </div>
+    </div>
+
+    <script>
+        // 模态框相关变量
+        const renameModal = document.getElementById('renameModal');
+        const hardlinkModal = document.getElementById('hardlinkModal');
+        const deleteModal = document.getElementById('deleteModal');
+        const closeButtons = document.querySelectorAll('.close, .close-modal');
+    
+        // 打开重命名模态框
+        document.querySelectorAll('.btn-rename-single').forEach(button => {
+            button.addEventListener('click', function() {
+                const path = this.getAttribute('data-path');
+                const name = this.getAttribute('data-name');
+                const isDir = this.getAttribute('data-isdir');
+                
+                document.getElementById('renamePath').value = path;
+                document.getElementById('renameIsDir').value = isDir;
+                document.getElementById('newName').value = name;
+                document.getElementById('renameResult').textContent = '';
+                
+                renameModal.style.display = 'block';
+            });
+        });
+    
+        // 打开硬链接查询模态框
+        document.querySelectorAll('.btn-hardlink').forEach(button => {
+            button.addEventListener('click', async function() {
+                const path = this.getAttribute('data-path');
+                const name = this.getAttribute('data-name');
+                
+                document.getElementById('hardlinkContent').innerHTML = '<p>查询中...</p>';
+                hardlinkModal.style.display = 'block';
+                
+                try {
+                    const response = await fetch(`/hardlink-query?path=${encodeURIComponent(path)}`);
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        let content = `<p><strong>文件:</strong> ${name}</p>`;
+                        content += `<p><strong>硬链接数量:</strong> ${result.linkCount}</p>`;
+                        
+                        if (result.links && result.links.length > 0) {
+                            content += '<p><strong>硬链接路径:</strong></p><ul>';
+                            result.links.forEach(link => {
+                                content += `<li>${link}</li>`;
+                            });
+                            content += '</ul>';
+                        } else {
+                            content += '<p><strong>没有找到硬链接</strong></p>';
+                        }
+                        
+                        document.getElementById('hardlinkContent').innerHTML = content;
+                    } else {
+                        document.getElementById('hardlinkContent').innerHTML = `<p class="error">错误: ${result.message}</p>`;
+                    }
+                } catch (error) {
+                    document.getElementById('hardlinkContent').innerHTML = `<p class="error">查询失败: ${error.message}</p>`;
+                }
+            });
+        });
+    
+        // 打开删除确认模态框
+        document.querySelectorAll('.btn-delete').forEach(button => {
+            button.addEventListener('click', function() {
+                const path = this.getAttribute('data-path');
+                const name = this.getAttribute('data-name');
+                const isDir = this.getAttribute('data-isdir');
+                
+                document.getElementById('deletePath').value = path;
+                document.getElementById('deleteIsDir').value = isDir;
+                document.getElementById('deleteMessage').querySelector('strong').textContent = name;
+                document.getElementById('deleteResult').textContent = '';
+                
+                deleteModal.style.display = 'block';
+            });
+        });
+    
+        // 关闭模态框
+        closeButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                renameModal.style.display = 'none';
+                hardlinkModal.style.display = 'none';
+                deleteModal.style.display = 'none';
+            });
+        });
+    
+        // 点击模态框外部关闭
+        window.addEventListener('click', function(event) {
+            if (event.target === renameModal || event.target === hardlinkModal || event.target === deleteModal) {
+                renameModal.style.display = 'none';
+                hardlinkModal.style.display = 'none';
+                deleteModal.style.display = 'none';
+            }
+        });
+    
+        // 处理重命名表单提交
+        document.getElementById('renameForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            
+            try {
+                const response = await fetch('/rename-single', { method: 'POST', body: formData });
+                const result = await response.json();
+                
+                const resultEl = document.getElementById('renameResult');
+                resultEl.textContent = result.message;
+                resultEl.className = 'result-message ' + (result.success ? 'success' : 'error');
+                
+                if (result.success) {
+                    setTimeout(() => {
+                        renameModal.style.display = 'none';
+                        location.reload(); // 刷新页面以显示新名称
+                    }, 1000);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        });
+    
+        // 处理删除确认
+        document.getElementById('confirmDelete').addEventListener('click', async function() {
+            const path = document.getElementById('deletePath').value;
+            const isDir = document.getElementById('deleteIsDir').value === 'true';
+            
+            try {
+                const response = await fetch('/delete-item', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path, is_dir: isDir })
+                });
+                const result = await response.json();
+                
+                const resultEl = document.getElementById('deleteResult');
+                resultEl.textContent = result.message;
+                resultEl.className = 'result-message ' + (result.success ? 'success' : 'error');
+                
+                if (result.success) {
+                    setTimeout(() => {
+                        deleteModal.style.display = 'none';
+                        location.reload(); // 刷新页面以更新文件列表
+                    }, 1000);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        });
+    </script>
+    <!-- 添加排序功能脚本 -->
+    <script>
+        // 合并所有DOMContentLoaded事件处理程序
+         document.addEventListener('DOMContentLoaded', function() {
+            // 排序状态变量
+            let currentSortKey = 'name';
+            let currentSortDirection = 'asc';
+        
+            // 初始化排序指示器
+            function updateSortIndicators() {
+                document.querySelectorAll('.sortable').forEach(header => {
+                    const indicator = header.querySelector('.sort-indicator');
+                    if (!indicator) return; // 确保指示器元素存在
+        
+                    if (header.getAttribute('data-sort-key') === currentSortKey) {
+                        indicator.textContent = currentSortDirection === 'asc' ? '↑' : '↓';
+                        header.classList.add(currentSortDirection);
+                        indicator.style.display = 'inline-block'; // 确保显示
+                    } else {
+                        indicator.textContent = '';
+                        header.classList.remove('asc', 'desc');
+                        indicator.style.display = 'inline-block'; // 保持占位
+                    }
+                });
+            }
+        
+            // 获取排序列索引
+            function getSortIndex(sortKey) {
+                const keys = {name: 0, type: 1, size: 2, modified: 3};
+                return keys[sortKey] || 0;
+            }
+        
+            // 自然排序函数
+            function naturalSort(a, b, ascending = true) {
+                // 提取文件名中的季节和集数信息 (如 S01E01)
+                const getEpisodeInfo = (str) => {
+                    const match = str.match(/S(\d+)E(\d+)/i);
+                    if (match) {
+                        return {
+                            season: parseInt(match[1], 10),
+                            episode: parseInt(match[2], 10)
+                        };
+                    }
+                    // 提取纯数字部分
+                    const numMatch = str.match(/(\d+)/);
+                    return {
+                        season: 0,
+                        episode: numMatch ? parseInt(numMatch[1], 10) : 0
+                    };
+                };
+        
+                // 比较集数信息
+                const aInfo = getEpisodeInfo(a);
+                const bInfo = getEpisodeInfo(b);
+        
+                // 先按季节排序
+                if (aInfo.season !== bInfo.season) {
+                    return ascending ? aInfo.season - bInfo.season : bInfo.season - aInfo.season;
+                }
+        
+                // 再按集数排序
+                if (aInfo.episode !== bInfo.episode) {
+                    return ascending ? aInfo.episode - bInfo.episode : bInfo.episode - aInfo.episode;
+                }
+        
+                // 最后按原始字符串排序
+                return ascending ? a.localeCompare(b) : b.localeCompare(a);
+            }
+        
+            // 排序行数据
+            function sortRows() {
+                try {
+                    const table = document.querySelector('.file-list table');
+                    const tbody = table ? table.querySelector('tbody') : null;
+                    if (!tbody) return;
+        
+                    const rows = Array.from(tbody.querySelectorAll('tr'));
+                    if (rows.length === 0) return;
+        
+                    rows.sort((a, b) => {
+                        let aValue, bValue;
+                        const sortKey = currentSortKey;
+        
+                        // 根据不同列获取对应的值
+                        switch(sortKey) {
+                            case 'name':
+                                aValue = a.querySelector('td:first-child').textContent.trim();
+                                bValue = b.querySelector('td:first-child').textContent.trim();
+                                return naturalSort(aValue, bValue, currentSortDirection === 'asc');
+                            case 'size':
+                                aValue = parseInt(a.querySelector('td[data-size]')?.getAttribute('data-size') || '0', 10);
+                                bValue = parseInt(b.querySelector('td[data-size]')?.getAttribute('data-size') || '0', 10);
+                                break;
+                            case 'modified':
+                                // 修复时间戳单位不匹配问题（秒→毫秒）
+                                const aModified = a.children[3].getAttribute('data-modified');
+                                const bModified = b.children[3].getAttribute('data-modified');
+                                // 将秒级时间戳转换为毫秒级
+                                aValue = aModified ? new Date(parseInt(aModified, 10) * 1000).getTime() || 0 : 0;
+                                bValue = bModified ? new Date(parseInt(bModified, 10) * 1000).getTime() || 0 : 0;
+                                break;
+                            case 'type':
+                                aValue = a.children[getSortIndex(sortKey)].textContent.toLowerCase();
+                                bValue = b.children[getSortIndex(sortKey)].textContent.toLowerCase();
+                                break;
+                            default:
+                                aValue = a.textContent;
+                                bValue = b.textContent;
+                        }
+        
+                        // 比较值并返回结果
+                        if (aValue < bValue) return currentSortDirection === 'asc' ? -1 : 1;
+                        if (aValue > bValue) return currentSortDirection === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+        
+                    // 重新添加排序后的行
+                    rows.forEach(row => tbody.appendChild(row));
+                } catch (error) {
+                    console.error('排序时出错:', error);
+                }
+            }
+        
+            // 绑定表头点击事件
+            function bindSortEvents() {
+                document.querySelectorAll('.sortable').forEach(header => {
+                    header.addEventListener('click', function() {
+                        const newSortKey = this.getAttribute('data-sort-key');
+                        if (!newSortKey) return;
+        
+                        // 更新排序状态
+                        if (newSortKey === currentSortKey) {
+                            currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+                        } else {
+                            currentSortKey = newSortKey;
+                            currentSortDirection = 'asc';
+                        }
+        
+                        // 更新UI和排序
+                        updateSortIndicators();
+                        sortRows();
+                    });
+                });
+            }
+        
+            // 文件类型识别功能
+            function initFileType识别() {
+                const fileTypes = {
+                    image: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'],
+                    video: ['mp4', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'm4v'],
+                    audio: ['mp3', 'wav', 'flac', 'aac', 'ogg'],
+                    document: ['doc', 'docx', 'pdf', 'txt', 'xlsx', 'pptx', 'csv', 'md'],
+                    archive: ['zip', 'rar', 'tar', 'gz', '7z', 'iso'],
+                    code: ['html', 'css', 'js', 'py', 'java', 'cpp', 'json', 'xml']
+                };
+        
+                document.querySelectorAll('.file-type').forEach(cell => {
+                    const fileName = cell.getAttribute('data-name');
+                    const isDir = cell.textContent.trim() === '文件夹';
+        
+                    if (!isDir) {
+                        const ext = fileName.split('.').pop()?.toLowerCase() || '';
+                        let category = '文件';
+                        let typeClass = '';
+        
+                        for (const [type, extensions] of Object.entries(fileTypes)) {
+                            if (extensions.includes(ext)) {
+                                category = {
+                                    image: '图片',
+                                    video: '视频',
+                                    audio: '音频',
+                                    document: '文档',
+                                    archive: '压缩包',
+                                    code: '代码'
+                                }[type];
+                                typeClass = `file-type-${type}`;
+                                break;
+                            }
+                        }
+        
+                        cell.textContent = category;
+                        cell.classList.add(typeClass);
+                        cell.title = `类型: ${category} (${ext.toUpperCase()})`;
+                    } else {
+                        cell.classList.add('file-type-folder');
+                    }
+                });
+            }
+        
+            // 初始化所有功能
+            function init() {
+                bindSortEvents();
+                updateSortIndicators();
+                sortRows();
+                initFileType识别();
+            }
+        
+            // 启动初始化
+            init();
+        });
+        </script>
+    <!-- 在文件末尾添加类型识别脚本 -->
+    <script>
+        // 文件类型识别功能
+        document.addEventListener('DOMContentLoaded', function() {
+            // 定义文件类型映射
+            const fileTypes = {
+                image: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'],
+                video: ['mp4', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'm4v'],
+                audio: ['mp3', 'wav', 'flac', 'aac', 'ogg'],
+                document: ['doc', 'docx', 'pdf', 'txt', 'xlsx', 'pptx', 'csv', 'md'],
+                archive: ['zip', 'rar', 'tar', 'gz', '7z', 'iso'],
+                code: ['html', 'css', 'js', 'py', 'java', 'cpp', 'json', 'xml']
+            };
+        
+            // 获取所有文件类型单元格
+            document.querySelectorAll('.file-type').forEach(cell => {
+                const fileName = cell.getAttribute('data-name');
+                const isDir = cell.textContent.trim() === '文件夹';
+        
+                if (!isDir) {
+                    // 获取文件扩展名
+                    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+                    let category = '文件';
+                    let typeClass = '';
+        
+                    // 确定文件类别
+                    for (const [type, extensions] of Object.entries(fileTypes)) {
+                        if (extensions.includes(ext)) {
+                            category = {
+                                image: '图片',
+                                video: '视频',
+                                audio: '音频',
+                                document: '文档',
+                                archive: '压缩包',
+                                code: '代码'
+                            }[type];
+                            typeClass = `file-type-${type}`;
+                            break;
+                        }
+                    }
+        
+                    // 更新显示内容和样式
+                    cell.textContent = category;
+                    cell.classList.add(typeClass);
+                    cell.title = `类型: ${category} (${ext.toUpperCase()})`;
+                } else {
+                    cell.classList.add('file-type-folder');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

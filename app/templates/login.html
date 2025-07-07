@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>媒体文件管理器 - 登录</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-body">
+    <div class="login-container card shadow-lg">
+        <div class="login-header text-center mb-4">
+            <h1 class="text-primary">媒体文件管理器</h1>
+            <p class="text-gray">请登录以访问您的媒体库</p>
+        </div>
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <div class="flash-messages mb-4">
+              {% for message in messages %}
+                <div class="alert alert-danger">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+        <form method="POST" action="/login" class="login-form">
+            <div class="form-group mb-3">
+                <label for="username" class="form-label">用户名</label>
+                <input type="text" id="username" name="username" required class="form-control form-control-lg">
+            </div>
+            <div class="form-group mb-4">
+                <label for="password" class="form-label">密码</label>
+                <input type="password" id="password" name="password" required class="form-control form-control-lg">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block btn-lg transition-all">登录</button>
+        </form>
+        <div class="login-footer text-center mt-4 text-gray-light">
+            <p>&copy; 2025 媒体文件管理器</p>
+        </div>
+    </div>
+</body>
+</html>

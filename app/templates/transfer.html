@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>文件转移 - 媒体文件管理器</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">媒体文件管理器</div>
+        <div class="navbar-menu">
+            <a href="/" class="btn btn-back">返回文件管理</a>
+            <a href="/settings" class="btn btn-settings">系统设置</a>
+            <a href="/logout" class="btn btn-logout">退出登录</a>
+        </div>
+    </nav>
+    <div class="container rename-container">
+        <div class="card">
+            <div class="card-header">
+                <h2>文件转移</h2>
+                <p class="path-display">当前路径: {{ current_path }}</p>
+            </div>
+            <div class="card-body">
+                <form id="transferForm" method="POST">
+                    <input type="hidden" name="source_dir" value="{{ current_path }}">
+                    <input type="hidden" name="filename" value="{{ filename if filename and not is_folder else '' }}">
+                    <input type="hidden" name="is_folder" value="{{ 'true' if not filename else 'false' }}">
+                    
+                    <div class="form-group">
+                        <label for="source_path" class="form-label">输入路径</label>
+                        <input type="text" id="source_path" value="{{ current_path + '/' + filename if filename else current_path }}" readonly class="form-control">
+                        <div class="form-text">当前选中的文件/文件夹路径</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="dest_dir" class="form-label">输出路径</label>
+                        <input type="text" id="dest_dir" name="dest_dir" required placeholder="例如：电影/动作片" class="form-control">
+                        <div class="form-text">文件将被转移到的目标路径</div>
+                    </div>
+    
+                    <!-- 移除媒体类型选择部分 -->
+    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="prefix" class="form-label">文件名前缀</label>
+                            <input type="text" id="prefix" name="prefix" class="form-control" required placeholder="例如：权力的游戏">
+                            <small class="form-text">将作为文件名的开头部分</small>
+                        </div>
+                    </div>
+    
+                    <!-- 添加命名模式选择器 -->
+                    <div class="form-group">
+                        <label for="naming_pattern" class="form-label">命名模式</label>
+                        <select id="naming_pattern" name="naming_pattern" class="form-control" required>
+                            <option value="season_episode_cn" selected>季集+中文模式 (S01E01 - 第1集)</option>
+                            <option value="season_episode">季集模式 (S01E01)</option>
+                            <option value="episode_only">仅集数模式 (第01集)</option>
+                            <option value="number_sequence">数字序号模式 (001)</option>
+                            <option value="custom">自定义模式</option>
+                        </select>
+                    </div>
+    
+                    <!-- 自定义模式输入框 -->
+                    <div id="custom_pattern_group" class="form-group" style="display: none;">
+                        <label for="custom_pattern" class="form-label">自定义模式</label>
+                        <input type="text" id="custom_pattern" name="custom_pattern" class="form-control" placeholder="使用{prefix}, {season}, {episode}, {number}作为变量">
+                        <small class="form-text">例如: {prefix}_S{season}E{episode}</small>
+                    </div>
+    
+                    <!-- 修改tv_specific_fields为通用字段集 -->
+                    <div id="naming_fields">
+                        <div class="form-row d-flex gap-2 align-items-end">
+                            <div class="form-group flex-fill">
+                                <label for="season" class="form-label">季数</label>
+                                <div class="d-flex gap-2">
+                                    <input type="number" id="season" name="season" min="1" value="1" class="form-control">
+                                    <label class="form-checkbox align-self-end">
+                                        <input type="checkbox" id="create_season_folder" name="create_season_folder" checked> 创建季文件夹
+                                    </label>
+                                </div>
+                                <div class="form-text">用于季集模式的季数编号</div>
+                            </div>
+    
+                            <div class="form-group flex-fill">
+                                <label for="start_episode" class="form-label">起始序号</label>
+                                <input type="number" id="start_episode" name="start_episode" class="form-control" min="1" value="1" required>
+                            </div>
+    
+                            <div class="form-group flex-fill">
+                                <label for="digits" class="form-label">序号位数</label>
+                                <input type="number" id="digits" name="digits" class="form-control" min="1" max="5" value="2" required>
+                                <div class="form-text">序号的数字位数，不足将补零</div>
+                            </div>
+    
+                            <div class="form-group flex-fill">
+                                <label for="min_size" class="form-label">最小文件大小 (MB)</label>
+                                <input type="number" id="min_size" name="min_size" min="0" step="0.1" value="0" class="form-control">
+                            </div>
+                        </div>
+                    </div>
+    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">转移方式</label>
+                            <div class="radio-group styled-radio">
+                                <label><input type="radio" name="transfer_method" value="move" checked> 移动</label>
+                                <label><input type="radio" name="transfer_method" value="copy"> 复制</label>
+                                <label><input type="radio" name="transfer_method" value="hardlink"> 硬链接</label>
+                                <label><input type="radio" name="transfer_method" value="symlink"> 软链接</label>
+                            </div>
+                        </div>
+                    </div>
+    
+                    <!-- 删除了重复的最小文件大小、文件名前缀和起始集数字段 -->
+    
+                    <div class="form-actions d-flex gap-2">
+                        <a href="/" class="btn btn-danger flex-fill text-decoration-none">取消</a>
+                        <button type="submit" class="btn btn-primary flex-fill">执行转移</button>
+                    </div>
+                    
+                    <!-- 进度显示区域 -->
+                    <div class="progress-container" style="display: none;">
+                        <div class="progress-bar" id="progressBar"></div>
+                        <div class="progress-text" id="progressText"></div>
+                    </div>
+                </form>
+                <div id="result" class="result-message"></div>
+    
+                <!-- 添加预览区域 -->
+                <div class="form-group preview-container">
+                    <label class="form-label">转移预览</label>
+                    <div id="preview_list" class="preview-list">
+                        <!-- 预览内容将通过JS动态生成 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // 删除媒体类型切换逻辑
+    
+        // 添加命名模式切换逻辑
+        const namingPatternSelect = document.getElementById('naming_pattern');
+        const customPatternGroup = document.getElementById('custom_pattern_group');
+        const namingFields = document.getElementById('naming_fields');
+    
+        // 显示/隐藏自定义模式输入框
+        function toggleCustomPattern() {
+            customPatternGroup.style.display = namingPatternSelect.value === 'custom' ? 'block' : 'none';
+            updatePreview();
+        }
+    
+        // 更新预览
+        function updatePreview() {
+            const prefix = document.getElementById('prefix').value;
+            const season = document.getElementById('season').value;
+            const startEpisode = document.getElementById('start_episode').value;
+            const digits = document.getElementById('digits').value;
+            const pattern = namingPatternSelect.value;
+            const customPattern = document.getElementById('custom_pattern').value;
+            const previewList = document.getElementById('preview_list');
+            const sourcePath = document.getElementById('source_path').value;
+            const fileName = sourcePath.split('/').pop();
+    
+            // 清空预览
+            previewList.innerHTML = '';
+    
+            // 如果没有选择文件，显示提示
+            if (!fileName) {
+                const previewItem = document.createElement('div');
+                previewItem.className = 'preview-item';
+                previewItem.textContent = '请选择要转移的文件';
+                previewList.appendChild(previewItem);
+                return;
+            }
+    
+            // 生成多个预览示例
+            for (let i = 0; i < 3; i++) {
+                const episode = parseInt(startEpisode) + i;
+                let newName = generateFileName(prefix, season, episode, digits, pattern, customPattern);
+                const ext = fileName.split('.').pop() || '';
+                const previewItem = document.createElement('div');
+                previewItem.className = 'preview-item';
+                previewItem.textContent = `示例文件${i+1}.${ext} → ${newName}${ext ? '.' + ext : ''}`;
+                previewList.appendChild(previewItem);
+            }
+        }
+    
+        // 生成文件名
+        function generateFileName(prefix, season, episode, digits, pattern, customPattern) {
+            const episodeStr = episode.toString().padStart(digits, '0');
+            const seasonStr = season.toString().padStart(2, '0');
+            const numberStr = episode.toString().padStart(digits, '0');
+    
+            switch(pattern) {
+                case 'season_episode_cn':
+                    return `${prefix} - S${seasonStr}E${episodeStr} - 第${episode}集`;
+                case 'season_episode':
+                    return `${prefix} - S${seasonStr}E${episodeStr}`;
+                case 'episode_only':
+                    return `${prefix} - 第${episode}集`;
+                case 'number_sequence':
+                    return `${prefix} - ${numberStr}`;
+                case 'custom':
+                    return customPattern
+                        .replace(/{prefix}/g, prefix)
+                        .replace(/{season}/g, season)
+                        .replace(/{episode}/g, episode)
+                        .replace(/{season2}/g, seasonStr)
+                        .replace(/{episode2}/g, episodeStr)
+                        .replace(/{number}/g, numberStr);
+                default:
+                    return `${prefix} - S${seasonStr}E${episodeStr}`;
+            }
+        }
+    
+        // 初始化显示状态
+        toggleCustomPattern();
+    
+        // 添加事件监听器
+        namingPatternSelect.addEventListener('change', toggleCustomPattern);
+        // 添加输入字段变化监听
+        ['prefix', 'season', 'start_episode', 'digits', 'custom_pattern'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) element.addEventListener('input', updatePreview);
+        });
+    
+        // 初始化预览
+        updatePreview();
+    
+        // 表单提交逻辑
+        document.getElementById('transferForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const submitButton = this.querySelector('button[type="submit"]');
+            const progressContainer = document.querySelector('.progress-container');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const resultEl = document.getElementById('result');
+            
+            // 禁用按钮并显示进度
+            submitButton.disabled = true;
+            resultEl.style.display = 'none';
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressText.textContent = '正在初始化转移任务...';
+            
+            try {
+                // 提交转移请求
+                const response = await fetch('/transfer', { method: 'POST', body: formData });
+                const { task_id } = await response.json();
+                
+                // 轮询进度
+                const pollInterval = setInterval(async () => {
+                    try {
+                        // 添加调试信息
+                        console.log(`获取进度: /transfer-progress/${task_id}`);
+                        const progressResponse = await fetch(`/transfer-progress/${task_id}`);
+                        
+                        if (!progressResponse.ok) {
+                            // 获取详细错误信息
+                            const errorDetails = await progressResponse.text();
+                            throw new Error(`HTTP错误: ${progressResponse.status} - ${errorDetails}`);
+                        }
+                        
+                        const progressData = await progressResponse.json();
+                        progressBar.style.width = `${progressData.progress}%`;
+                        progressText.textContent = progressData.message;
+                        
+                        // 检查任务状态
+                        if (progressData.status === 'completed' || progressData.status === 'error') {
+                            clearInterval(pollInterval);
+                            submitButton.disabled = false;
+                            resultEl.textContent = progressData.message;
+                            resultEl.style.color = progressData.success ? 'green' : 'red';
+                            resultEl.style.display = 'block';
+                            progressContainer.style.display = 'none';
+                        }
+                    } catch (error) {
+                        clearInterval(pollInterval);
+                        submitButton.disabled = false;
+                        // 显示更详细的错误信息
+                        resultEl.textContent = `获取进度失败: ${error.message}`;
+                        resultEl.style.color = 'red';
+                        resultEl.style.display = 'block';
+                        progressContainer.style.display = 'none';
+                    }
+                }, 1000); // 每秒查询一次进度
+            } catch (error) {
+                submitButton.disabled = false;
+                resultEl.textContent = '操作失败: ' + error.message;
+                resultEl.style.color = 'red';
+                resultEl.style.display = 'block';
+                progressContainer.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
+<!-- 修改预览逻辑 -->
+<script>
+function updatePreview() {
+    const prefix = document.getElementById('prefix').value;
+    const season = document.getElementById('season').value;
+    const startEpisode = document.getElementById('start_episode').value;
+    const digits = document.getElementById('digits').value;
+    const pattern = namingPatternSelect.value;
+    const customPattern = document.getElementById('custom_pattern').value;
+    const previewList = document.getElementById('preview_list');
+    const sourcePath = document.getElementById('source_path').value;
+    const fileName = sourcePath.split('/').pop();
+
+    // 清空预览
+    previewList.innerHTML = '';
+
+    // 如果没有选择文件，显示提示
+    if (!fileName) {
+        const previewItem = document.createElement('div');
+        previewItem.className = 'preview-item';
+        // 将文件检查修改为支持文件夹
+        if (!sourcePath || sourcePath === '/') {
+            previewItem.textContent = '请选择要转移的文件或文件夹';
+        } else {
+            previewItem.textContent = '请选择要转移的文件';
+        }
+        previewList.appendChild(previewItem);
+        return;
+    }
+
+    // 生成多个预览示例
+    for (let i = 0; i < 3; i++) {
+        const episode = parseInt(startEpisode) + i;
+        let newName = generateFileName(prefix, season, episode, digits, pattern, customPattern);
+        const ext = fileName.split('.').pop() || '';
+        const previewItem = document.createElement('div');
+        previewItem.className = 'preview-item';
+        previewItem.textContent = `示例文件${i+1}.${ext} → ${newName}${ext ? '.' + ext : ''}`;
+        previewList.appendChild(previewItem);
+    }
+}
+</script>

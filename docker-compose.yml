@@ -1,0 +1,15 @@
+version: '3'
+services:
+  media-manager:
+    build: .
+    # 移除 network_mode: "host"
+    ports:
+      - "3005:3005"  # 映射容器端口到主机
+    volumes:
+      - /vol2/1000/Video:/media
+      - /vol1/1000/docker/media-renamer/app/conf:/app/conf
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - ADMIN_USER=admin
+      - ADMIN_PASSWORD=admin

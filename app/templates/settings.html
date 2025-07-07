@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>媒体文件管理器 - 设置</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">媒体文件管理器</div>
+        <div class="navbar-menu">
+            <a href="/" class="btn btn-back">返回文件管理</a>
+            <a href="/logout" class="btn btn-logout">退出登录</a>
+        </div>
+    </nav>
+    <div class="container settings-container">
+        <!-- 删除系统设置标题 -->
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <div class="flash-messages">
+              {% for message in messages %}
+                <div class="alert alert-success">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+        
+        <form method="POST" action="/settings" class="settings-form">
+            <!-- 添加按钮容器 -->
+            <div class="settings-actions">
+                <button type="submit" class="btn btn-primary">保存设置</button>
+            </div>
+            
+            <div class="settings-layout">
+                <!-- 账户设置区域 -->
+                <div class="settings-section account-section">
+                    <h3><i class="icon-user"></i> 账户设置</h3>
+                    <div class="form-row account-row vertical-layout"> <!-- 添加vertical-layout类 -->
+                        <div class="form-group with-icon account-item">
+                            <label for="new_username">用户名</label>
+                            <div class="input-group">
+                                <span class="input-icon"><i class="icon-user-circle"></i></span>
+                                <input type="text" id="new_username" name="new_username" value="{{ config.admin_username }}" required>
+                            </div>
+                        </div>
+                        <div class="form-group with-icon account-item">
+                            <label for="new_password">新密码 (留空则不修改)</label>
+                            <div class="input-group">
+                                <span class="input-icon"><i class="icon-lock"></i></span>
+                                <input type="password" id="new_password" name="new_password" placeholder="输入新密码">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            
+            <!-- 分类路径管理区域 -->
+            <div class="settings-section categories-section">
+                <h3><i class="icon-folder"></i> 分类路径管理</h3>
+                <div id="categories-container">
+                    {% for category in config.categories %}
+                    <div class="category-item horizontal-layout">
+                        <div class="form-group category-name">
+                            <label>分类名称</label>
+                            <input type="text" name="category_name_{{ loop.index0 }}" value="{{ category.name }}" required>
+                        </div>
+                        <div class="form-group category-path">
+                            <label>文件夹路径</label>
+                            <div class="path-input-group">
+                                <input type="text" name="category_path_{{ loop.index0 }}" value="{{ category.path }}" required>
+                                <button type="button" class="btn btn-browse" onclick="browseFolder({{ loop.index0 }})">浏览</button>
+
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-remove" onclick="removeCategory(this)">删除</button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <!-- 添加分类和删除分类按钮容器 -->
+                <div class="category-actions">
+                    <button type="button" id="add-category" class="btn btn-add-category">添加分类</button>
+                </div>
+            </div>
+            
+            <!-- 确保此容器正确闭合 -->
+            
+            <!-- 添加缺失的settings-layout闭合标签 -->
+            </div>
+        
+        <!-- 保存按钮必须在settings-layout外部 -->
+        <!-- <button type="submit" class="btn btn-primary">保存设置</button> -->
+    </form>
+    </div>
+    <script>
+        // 添加分类按钮功能
+        document.getElementById('add-category').addEventListener('click', function() {
+            const container = document.getElementById('categories-container');
+            const index = container.children.length;
+            const newCategory = document.createElement('div');
+            newCategory.className = 'category-item horizontal-layout'; // 添加horizontal-layout类
+            newCategory.innerHTML = `
+                <div class="form-group category-name">
+                    <label>分类名称</label>
+                    <input type="text" name="category_name_${index}" placeholder="输入分类名称" required>
+                </div>
+                <div class="form-group category-path">
+                    <label>文件夹路径</label>
+                    <div class="path-input-group">
+                        <input type="text" name="category_path_${index}" placeholder="选择文件夹路径" required>
+                        <button type="button" class="btn btn-browse" onclick="browseFolder(${index})">浏览</button>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-remove" onclick="removeCategory(this)">删除</button>
+            `;
+            container.appendChild(newCategory);
+        });
+
+        // 删除分类功能
+        function removeCategory(button) {
+            const categoryItem = button.parentElement;
+            categoryItem.remove();
+            // 更新索引
+            updateCategoryIndices();
+        }
+
+        // 更新分类索引
+        function updateCategoryIndices() {
+            const items = document.querySelectorAll('.category-item');
+            items.forEach((item, index) => {
+                const inputs = item.querySelectorAll('input');
+                inputs[0].name = `category_name_${index}`;
+                inputs[1].name = `category_path_${index}`;
+                const browseBtn = item.querySelector('.btn-browse');
+                browseBtn.onclick = () => browseFolder(index);
+            });
+        }
+
+        // 文件夹浏览功能
+        function browseFolder(index) {
+            // 调用文件夹选择API
+            fetch('/browse-folders')
+                .then(response => response.json())
+                .then(data => {
+                    // 简化实现，实际应显示文件夹选择对话框
+                    const path = prompt('请输入文件夹路径:', data.defaultPath);
+                    if (path) {
+                        document.querySelector(`input[name="category_path_${index}"]`).value = path;
+                    }
+                });
+        }
+    </script>
+    <!-- 在body结束前添加文件夹浏览模态框 -->
+    <div id="folderBrowserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>浏览文件夹</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="folderPathDisplay" class="folder-path"></div>
+                <ul id="folderList" class="folder-list"></ul>
+            </div>
+            <div class="modal-footer">
+                <button id="selectFolderBtn" class="btn btn-primary">选择</button>
+                <button id="cancelBrowseBtn" class="btn btn-secondary">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // 添加全局变量存储当前浏览状态
+    let currentBrowseIndex = -1;
+    let currentBrowsePath = '';
+    
+    // 修改文件夹浏览函数
+    function browseFolder(index) {
+        currentBrowseIndex = index;
+        currentBrowsePath = '';
+        
+        // 显示模态框
+        const modal = document.getElementById('folderBrowserModal');
+        modal.style.display = 'block';
+        
+        // 加载根目录
+        loadFolders('');
+    }
+    
+    // 加载文件夹列表
+    function loadFolders(path) {
+        fetch(`/browse-folders?path=${encodeURIComponent(path)}`)
+            .then(response => {
+                if (!response.ok) throw new Error('无法加载文件夹');
+                return response.json();
+            })
+            .then(data => {
+                currentBrowsePath = data.currentPath;
+                document.getElementById('folderPathDisplay').textContent = 
+                    `/media/${data.currentPath || ''}`;
+                
+                const folderList = document.getElementById('folderList');
+                folderList.innerHTML = '';
+                
+                // 添加返回上一级选项（如果不是根目录）
+                if (data.currentPath) {
+                    const parentItem = document.createElement('li');
+                    parentItem.className = 'folder-item parent-folder';
+                    parentItem.innerHTML = '<i class="icon-up"></i> ..';
+                    parentItem.onclick = () => {
+                        const parentPath = data.currentPath.split('/').slice(0, -1).join('/');
+                        loadFolders(parentPath);
+                    };
+                    folderList.appendChild(parentItem);
+                }
+                
+                // 添加文件夹列表
+                data.folders.forEach(folder => {
+                    const folderItem = document.createElement('li');
+                    folderItem.className = 'folder-item';
+                    folderItem.innerHTML = `<i class="icon-folder"></i> ${folder.name}`;
+                    folderItem.onclick = () => loadFolders(folder.path);
+                    folderList.appendChild(folderItem);
+                });
+            })
+            .catch(error => {
+                alert(`加载文件夹失败: ${error.message}`);
+            });
+    }
+    
+    // 添加模态框事件监听
+    document.getElementById('selectFolderBtn').addEventListener('click', function() {
+        if (currentBrowseIndex !== -1) {
+            const input = document.querySelector(`input[name="category_path_${currentBrowseIndex}"]`);
+            input.value = currentBrowsePath;
+            
+            // 关闭模态框
+            document.getElementById('folderBrowserModal').style.display = 'none';
+        }
+    });
+    
+    document.getElementById('cancelBrowseBtn').addEventListener('click', function() {
+        document.getElementById('folderBrowserModal').style.display = 'none';
+    });
+    
+    document.querySelector('.close').addEventListener('click', function() {
+        document.getElementById('folderBrowserModal').style.display = 'none';
+    });
+    
+    window.onclick = function(event) {
+        const modal = document.getElementById('folderBrowserModal');
+        if (event.target == modal) {
+            modal.style.display = 'none';
+        }
+    };
+    </script>
+</body>
+</html>

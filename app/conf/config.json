@@ -1,0 +1,11 @@
+{
+  "admin_username": "admin",
+  "admin_password": "admin",
+  "category_paths": {
+    "电影": "电影",
+    "电视剧": "电视剧",
+    "动漫": "动漫",
+    "短视频": "短视频"
+  },
+  "categories": []
+}
